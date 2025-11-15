@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import ContentCard from '../components/ContentCard';
-import Button from '../components/Button';
-import styles from './dashboard.module.css';
+import ContentCard from '../../components/ContentCard';
+import Button from '../../components/Button'; 
+import styles from './draft.module.css';
 
 interface Idea {
   id: string;
