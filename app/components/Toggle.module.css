@@ -1,0 +1,52 @@
+.container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.label {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 400;
+  color: var(--charcoal);
+}
+
+.toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  background: var(--divider-grey);
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  padding: 0;
+}
+
+.toggle.checked {
+  background: var(--charcoal);
+}
+
+.thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  background: var(--cream);
+  transition: transform 0.3s ease;
+  display: block;
+}
+
+.toggle.checked .thumb {
+  transform: translateX(20px);
+}
+
+.toggle:hover {
+  opacity: 0.8;
+}
+
+.toggle:focus {
+  outline: 2px solid var(--charcoal);
+  outline-offset: 2px;
+}

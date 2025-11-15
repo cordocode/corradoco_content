@@ -1,407 +1,502 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import ContentCard from '../components/ContentCard';
+import Button from '../components/Button';
+import styles from './dashboard.module.css';
 
 interface Idea {
   id: string;
   content: string;
+  source_email: string | null;
+  status: string;
+  created_at: string;
 }
 
 interface ContentPiece {
   id: string;
+  idea_id: string;
   type: 'blog' | 'linkedin';
   title: string | null;
   content: string;
+  status: string;
+  queue_position: number | null;
+  created_at: string;
+  updated_at: string;
 }
 
-export default function DraftPage() {
-  const params = useParams();
+export default function DashboardPage() {
+  const [ideas, setIdeas] = useState<Idea[]>([]);
+  const [linkedinQueue, setLinkedinQueue] = useState<ContentPiece[]>([]);
+  const [blogQueue, setBlogQueue] = useState<ContentPiece[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [linkedinEnabled, setLinkedinEnabled] = useState(false);
+  const [blogEnabled, setBlogEnabled] = useState(false);
+  const [showNewIdea, setShowNewIdea] = useState(false);
+  const [newIdeaContent, setNewIdeaContent] = useState('');
+  const [draggedItem, setDraggedItem] = useState<string | null>(null);
+  const [draggedOverItem, setDraggedOverItem] = useState<string | null>(null);
+  const [draggedFromColumn, setDraggedFromColumn] = useState<string | null>(null);
+  const newIdeaRef = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
-  const ideaId = params.id as string;
-
-  const [idea, setIdea] = useState<Idea | null>(null);
-  const [linkedinCount, setLinkedinCount] = useState(1);
-  const [blogCount, setBlogCount] = useState(0);
-  const [pieces, setPieces] = useState<ContentPiece[]>([]);
-  const [generating, setGenerating] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [selectedPieces, setSelectedPieces] = useState<Set<string>>(new Set());
-  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    fetchIdea();
-  }, [ideaId]);
+    fetchData();
+    fetchSettings();
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
-  const fetchIdea = async () => {
-    try {
-      const response = await fetch(`/api/ideas/${ideaId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setIdea(data);
-      }
-    } catch (error) {
-      console.error('Error fetching idea:', error);
+  useEffect(() => {
+    if (showNewIdea && newIdeaRef.current) {
+      newIdeaRef.current.focus();
     }
-  };
+  }, [showNewIdea]);
 
-  const handleGenerate = async () => {
-    if (linkedinCount + blogCount === 0 || linkedinCount + blogCount > 5) return;
-    
-    setGenerating(true);
-    setPieces([]); // Clear previous pieces
-    setSelectedPieces(new Set()); // Clear selections
-    
+  const fetchData = async () => {
     try {
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ideaId,
-          linkedinCount,
-          blogCount,
-        }),
-      });
+      const [ideasRes, queueRes] = await Promise.all([
+        fetch('/api/ideas'),
+        fetch('/api/queue')
+      ]);
 
-      if (response.ok) {
-        const data = await response.json();
-        setPieces(data);
-        // Auto-select all new pieces
-        setSelectedPieces(new Set(data.map((p: ContentPiece) => p.id)));
+      if (ideasRes.ok) {
+        const ideasData = await ideasRes.json();
+        setIdeas(ideasData);
+      }
+
+      if (queueRes.ok) {
+        const queueData = await queueRes.json();
+        setLinkedinQueue(queueData.linkedin);
+        setBlogQueue(queueData.blog);
       }
     } catch (error) {
-      console.error('Error generating content:', error);
-      alert('Failed to generate content. Please try again.');
+      console.error('Error fetching data:', error);
     } finally {
-      setGenerating(false);
+      setLoading(false);
     }
   };
 
-  const handleContentUpdate = async (pieceId: string, content: string, title?: string) => {
+  const fetchSettings = async () => {
     try {
-      await fetch(`/api/content/${pieceId}`, {
-        method: 'PATCH',
+      const [linkedinRes, blogRes] = await Promise.all([
+        fetch('/api/settings/linkedin'),
+        fetch('/api/settings/blog')
+      ]);
+
+      if (linkedinRes.ok) {
+        const data = await linkedinRes.json();
+        setLinkedinEnabled(data.enabled);
+      }
+
+      if (blogRes.ok) {
+        const data = await blogRes.json();
+        setBlogEnabled(data.enabled);
+      }
+    } catch (error) {
+      console.error('Error fetching settings:', error);
+    }
+  };
+
+  const toggleLinkedIn = async () => {
+    const newState = !linkedinEnabled;
+    try {
+      const response = await fetch('/api/settings/linkedin', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, title }),
+        body: JSON.stringify({ enabled: newState }),
       });
 
-      setPieces(prev => prev.map(p => 
-        p.id === pieceId ? { ...p, content, title: title || p.title } : p
-      ));
+      if (response.ok) {
+        setLinkedinEnabled(newState);
+      }
     } catch (error) {
-      console.error('Error updating content:', error);
+      console.error('Error toggling LinkedIn:', error);
     }
   };
 
-  const handleRegenerate = async (pieceId: string) => {
+  const toggleBlog = async () => {
+    const newState = !blogEnabled;
     try {
-      const response = await fetch(`/api/content/${pieceId}/regenerate`, {
+      const response = await fetch('/api/settings/blog', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: newState }),
+      });
+
+      if (response.ok) {
+        setBlogEnabled(newState);
+      }
+    } catch (error) {
+      console.error('Error toggling Blog:', error);
+    }
+  };
+
+  const handleDraft = async (ideaId: string) => {
+    await fetch(`/api/ideas/${ideaId}/generating`, { method: 'POST' });
+    router.push(`/draft/${ideaId}`);
+  };
+
+  const handleAddIdea = async () => {
+    if (!newIdeaContent.trim()) return;
+
+    try {
+      const response = await fetch('/api/ideas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: newIdeaContent }),
+      });
+
+      if (response.ok) {
+        setNewIdeaContent('');
+        setShowNewIdea(false);
+        fetchData();
+      }
+    } catch (error) {
+      console.error('Error adding idea:', error);
+    }
+  };
+
+  const handleDeleteFromQueue = async (id: string) => {
+    if (!confirm('Remove this item from the queue?')) return;
+
+    try {
+      const response = await fetch(`/api/queue/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        fetchData();
+      }
+    } catch (error) {
+      console.error('Error deleting from queue:', error);
+    }
+  };
+
+  const handleRetryFailed = async (id: string) => {
+    try {
+      const response = await fetch(`/api/content/${id}/retry`, {
         method: 'POST',
       });
 
       if (response.ok) {
-        const data = await response.json();
-        setPieces(prev => prev.map(p => 
-          p.id === pieceId ? data : p
-        ));
+        fetchData();
       }
     } catch (error) {
-      console.error('Error regenerating:', error);
+      console.error('Error retrying:', error);
     }
   };
 
-  const toggleSelection = (pieceId: string) => {
-    setSelectedPieces(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(pieceId)) {
-        newSet.delete(pieceId);
-      } else {
-        newSet.add(pieceId);
-      }
-      return newSet;
-    });
+  const getQueueDayLabel = (position: number, type: 'blog' | 'linkedin') => {
+    if (type === 'blog') {
+      const weeks = Math.floor((position - 1) / 1);
+      return weeks === 0 ? 'Monday' : `Monday (in ${weeks + 1} weeks)`;
+    } else {
+      const days = ['Tuesday', 'Thursday', 'Saturday'];
+      const weekNum = Math.floor((position - 1) / 3);
+      const dayIndex = (position - 1) % 3;
+      return weekNum === 0 ? days[dayIndex] : `${days[dayIndex]} (week ${weekNum + 1})`;
+    }
   };
 
-  const toggleExpansion = (pieceId: string) => {
-    setExpandedCards(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(pieceId)) {
-        newSet.delete(pieceId);
-      } else {
-        newSet.add(pieceId);
-      }
-      return newSet;
-    });
+  const handleDragStart = (e: React.DragEvent, itemId: string, column: string) => {
+    setDraggedItem(itemId);
+    setDraggedFromColumn(column);
+    e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleAddSelectedToQueue = async () => {
-    if (selectedPieces.size === 0) {
-      alert('Please select at least one piece to add to queue');
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDragEnter = (e: React.DragEvent, itemId: string) => {
+    e.preventDefault();
+    if (draggedItem && draggedItem !== itemId) {
+      setDraggedOverItem(itemId);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDraggedOverItem(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetId: string, column: string) => {
+    e.preventDefault();
+    
+    if (!draggedItem || draggedItem === targetId || draggedFromColumn !== column) {
+      setDraggedItem(null);
+      setDraggedOverItem(null);
+      setDraggedFromColumn(null);
       return;
     }
 
-    const selectedIds = Array.from(selectedPieces);
+    // Optimistically update UI
+    const items = column === 'linkedin' ? linkedinQueue : 
+                 column === 'blog' ? blogQueue : ideas;
     
-    try {
-      await fetch('/api/queue/add', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contentIds: selectedIds }),
+    const draggedIndex = items.findIndex(item => item.id === draggedItem);
+    const targetIndex = items.findIndex(item => item.id === targetId);
+    
+    if (draggedIndex !== -1 && targetIndex !== -1) {
+      const newItems = [...items];
+      const [removed] = newItems.splice(draggedIndex, 1);
+      newItems.splice(targetIndex, 0, removed);
+      
+      // Update positions
+      newItems.forEach((item, index) => {
+        if ('queue_position' in item) {
+          item.queue_position = index + 1;
+        }
       });
-      alert(`Added ${selectedIds.length} items to queue!`);
-      router.push('/dashboard');
-    } catch (error) {
-      console.error('Error adding to queue:', error);
-      alert('Failed to add to queue. Please try again.');
+      
+      if (column === 'linkedin') {
+        setLinkedinQueue(newItems as ContentPiece[]);
+      } else if (column === 'blog') {
+        setBlogQueue(newItems as ContentPiece[]);
+      } else {
+        setIdeas(newItems as Idea[]);
+      }
+
+      // Call API to persist
+      if (column === 'linkedin' || column === 'blog') {
+        try {
+          const targetItem = items.find(item => item.id === targetId);
+          if (targetItem && 'queue_position' in targetItem && targetItem.queue_position) {
+            await fetch('/api/queue/reorder', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                itemId: draggedItem,
+                newPosition: targetItem.queue_position,
+                type: column
+              }),
+            });
+          }
+        } catch (error) {
+          console.error('Error reordering:', error);
+          fetchData(); // Revert on error
+        }
+      }
     }
+    
+    setDraggedItem(null);
+    setDraggedOverItem(null);
+    setDraggedFromColumn(null);
   };
 
-  const handleAddSingleToQueue = async (pieceId: string) => {
-    try {
-      await fetch('/api/queue/add-single', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contentId: pieceId }),
-      });
-      alert('Added to queue!');
-    } catch (error) {
-      console.error('Error adding to queue:', error);
-    }
+  const handleDragEnd = () => {
+    setDraggedItem(null);
+    setDraggedOverItem(null);
+    setDraggedFromColumn(null);
   };
 
-  const selectAll = () => {
-    setSelectedPieces(new Set(pieces.map(p => p.id)));
-  };
-
-  const selectNone = () => {
-    setSelectedPieces(new Set());
-  };
-
-  if (!idea) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="text-xl">Loading...</div>
-    </div>
-  );
+  if (loading) {
+    return (
+      <div className={styles.loading}>
+        <h2>Loading...</h2>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-6 flex justify-between items-center">
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="px-4 py-2 text-gray-600 hover:text-gray-900"
+    <div className={styles.container}>
+      <header className={styles.header}>
+        <h1>Content Dashboard</h1>
+      </header>
+
+      <div className={styles.columns}>
+        {/* Ideas Column */}
+        <div className={styles.column}>
+          <div className={styles.columnHeader}>
+            <h3>Ideas</h3>
+            <Button
+              size="small"
+              onClick={() => setShowNewIdea(true)}
+            >
+              Add Idea
+            </Button>
+          </div>
+          
+          <div 
+            className={styles.cardList}
+            onDragOver={handleDragOver}
           >
-            ← Back to Dashboard
-          </button>
-          {pieces.length > 0 && (
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600">
-                {selectedPieces.size} of {pieces.length} selected
-              </span>
-              <button
-                onClick={selectAll}
-                className="text-sm text-blue-600 hover:underline"
-              >
-                Select All
-              </button>
-              <button
-                onClick={selectNone}
-                className="text-sm text-blue-600 hover:underline"
-              >
-                Select None
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Original Idea */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-3">Original Idea</h2>
-          <p className="text-gray-700 whitespace-pre-wrap">{idea.content}</p>
-        </div>
-
-        {/* Generation Controls */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                LinkedIn Posts
-              </label>
-              <div className="flex items-center gap-4">
-                <input
-                  type="range"
-                  min="0"
-                  max="3"
-                  value={linkedinCount}
-                  onChange={(e) => setLinkedinCount(Number(e.target.value))}
-                  className="flex-1"
-                  disabled={generating}
+            {showNewIdea && (
+              <div className={styles.newIdeaCard}>
+                <textarea
+                  ref={newIdeaRef}
+                  value={newIdeaContent}
+                  onChange={(e) => setNewIdeaContent(e.target.value)}
+                  placeholder="Enter your idea..."
+                  className={styles.ideaInput}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && e.metaKey) {
+                      handleAddIdea();
+                    }
+                    if (e.key === 'Escape') {
+                      setShowNewIdea(false);
+                      setNewIdeaContent('');
+                    }
+                  }}
                 />
-                <span className="w-8 text-center font-semibold text-lg">{linkedinCount}</span>
+                <div className={styles.ideaActions}>
+                  <Button size="small" onClick={handleAddIdea}>
+                    Save
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="secondary"
+                    onClick={() => {
+                      setShowNewIdea(false);
+                      setNewIdeaContent('');
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
               </div>
-            </div>
+            )}
             
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Blog Posts
-              </label>
-              <div className="flex items-center gap-4">
-                <input
-                  type="range"
-                  min="0"
-                  max="2"
-                  value={blogCount}
-                  onChange={(e) => setBlogCount(Number(e.target.value))}
-                  className="flex-1"
-                  disabled={generating}
-                />
-                <span className="w-8 text-center font-semibold text-lg">{blogCount}</span>
-              </div>
-            </div>
-            
-            <div className="text-center">
-              <div className="text-sm text-gray-600 mb-2">
-                Total: {linkedinCount + blogCount}/5
-              </div>
-              <button
-                onClick={handleGenerate}
-                disabled={generating || linkedinCount + blogCount === 0 || linkedinCount + blogCount > 5}
-                className="px-8 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+            {ideas.map((idea) => (
+              <div
+                key={idea.id}
+                className={`${styles.cardWrapper} ${
+                  draggedItem === idea.id ? styles.dragging : ''
+                } ${
+                  draggedOverItem === idea.id ? styles.dragOver : ''
+                }`}
+                draggable
+                onDragStart={(e) => handleDragStart(e, idea.id, 'ideas')}
+                onDragEnter={(e) => handleDragEnter(e, idea.id)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, idea.id, 'ideas')}
+                onDragEnd={handleDragEnd}
               >
-                {generating ? (
-                  <span className="flex items-center gap-2">
-                    <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
-                    Generating...
-                  </span>
-                ) : 'Generate Content'}
-              </button>
-            </div>
+                <ContentCard
+                  id={idea.id}
+                  type="idea"
+                  content={idea.content}
+                  onAction={(id: string, action: string) => {
+                    if (action === 'draft') handleDraft(id);
+                  }}
+                  isGenerating={idea.status === 'generating'}
+                  isDraggable={false}
+                />
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Generated Content */}
-        {pieces.length > 0 && (
-          <>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-              {pieces.map((piece) => (
-                <div 
-                  key={piece.id} 
-                  className={`bg-white rounded-lg shadow transition-all ${
-                    selectedPieces.has(piece.id) ? 'ring-2 ring-blue-500' : ''
-                  }`}
-                >
-                  <div className="p-6">
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedPieces.has(piece.id)}
-                          onChange={() => toggleSelection(piece.id)}
-                          className="h-4 w-4 text-blue-600 rounded"
-                        />
-                        <span className={`px-3 py-1 rounded text-xs font-semibold ${
-                          piece.type === 'blog' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
-                        }`}>
-                          {piece.type === 'blog' ? 'Blog Post' : 'LinkedIn Post'}
-                        </span>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleRegenerate(piece.id)}
-                          className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-                        >
-                          Regenerate
-                        </button>
-                        <button
-                          onClick={() => handleAddSingleToQueue(piece.id)}
-                          className="text-sm text-green-600 hover:text-green-800 font-medium"
-                        >
-                          Add to Queue
-                        </button>
-                      </div>
-                    </div>
-
-                    {piece.type === 'blog' && (
-                      <input
-                        type="text"
-                        value={piece.title || ''}
-                        onChange={(e) => handleContentUpdate(piece.id, piece.content, e.target.value)}
-                        placeholder="Enter blog title..."
-                        className="w-full mb-3 p-2 border rounded-lg font-semibold"
-                      />
-                    )}
-
-                    {editingId === piece.id ? (
-                      <div>
-                        <textarea
-                          value={piece.content}
-                          onChange={(e) => handleContentUpdate(piece.id, e.target.value, piece.title || undefined)}
-                          onBlur={() => setEditingId(null)}
-                          className="w-full h-48 p-3 border rounded-lg resize-y"
-                          autoFocus
-                        />
-                        <div className="mt-2 text-right">
-                          <button
-                            onClick={() => setEditingId(null)}
-                            className="text-sm text-gray-600 hover:text-gray-800"
-                          >
-                            Done Editing
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div>
-                        <div
-                          onClick={() => setEditingId(piece.id)}
-                          className="cursor-pointer p-3 border rounded-lg hover:bg-gray-50 min-h-[120px] whitespace-pre-wrap"
-                        >
-                          {expandedCards.has(piece.id) 
-                            ? piece.content
-                            : `${piece.content.substring(0, 300)}${piece.content.length > 300 ? '...' : ''}`}
-                        </div>
-                        <div className="mt-2 flex justify-between items-center">
-                          <span className="text-xs text-gray-500">
-                            {piece.content.split(' ').length} words • {piece.content.length} characters
-                          </span>
-                          {piece.content.length > 300 && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleExpansion(piece.id);
-                              }}
-                              className="text-xs text-blue-600 hover:underline"
-                            >
-                              {expandedCards.has(piece.id) ? 'Show less' : 'Show more'}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
+        {/* LinkedIn Queue */}
+        <div className={styles.column}>
+          <div className={styles.columnHeader}>
+            <h3>LinkedIn Queue</h3>
+            <div className={styles.toggleContainer}>
+              <span className={styles.toggleLabel}>AUTO-POST</span>
+              <button
+                onClick={toggleLinkedIn}
+                className={`${styles.toggle} ${linkedinEnabled ? styles.toggleOn : ''}`}
+                aria-checked={linkedinEnabled}
+                role="switch"
+              >
+                <span className={styles.toggleThumb} />
+              </button>
             </div>
-
-            {/* Bottom Actions */}
-            <div className="sticky bottom-0 bg-white border-t shadow-lg p-4 -mx-8">
-              <div className="max-w-7xl mx-auto px-8 flex justify-between items-center">
-                <div className="text-sm text-gray-600">
-                  {selectedPieces.size > 0 
-                    ? `${selectedPieces.size} item${selectedPieces.size === 1 ? '' : 's'} selected`
-                    : 'Select items to add to queue'}
-                </div>
-                <button
-                  onClick={handleAddSelectedToQueue}
-                  disabled={selectedPieces.size === 0}
-                  className="px-8 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
-                >
-                  Add Selected to Queue ({selectedPieces.size})
-                </button>
+          </div>
+          
+          <div 
+            className={`${styles.cardList} ${!linkedinEnabled ? styles.disabled : ''}`}
+            onDragOver={handleDragOver}
+          >
+            {linkedinQueue.map((item) => (
+              <div
+                key={item.id}
+                className={`${styles.cardWrapper} ${
+                  draggedItem === item.id ? styles.dragging : ''
+                } ${
+                  draggedOverItem === item.id ? styles.dragOver : ''
+                }`}
+                draggable
+                onDragStart={(e) => handleDragStart(e, item.id, 'linkedin')}
+                onDragEnter={(e) => handleDragEnter(e, item.id)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, item.id, 'linkedin')}
+                onDragEnd={handleDragEnd}
+              >
+                <ContentCard
+                  id={item.id}
+                  type="linkedin"
+                  content={item.content}
+                  status={item.status}
+                  queuePosition={item.queue_position}
+                  dayLabel={getQueueDayLabel(item.queue_position!, 'linkedin')}
+                  onDelete={handleDeleteFromQueue}
+                  onAction={(id: string, action: string) => {
+                    if (action === 'retry') handleRetryFailed(id);
+                  }}
+                  isDraggable={false}
+                />
               </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Blog Queue */}
+        <div className={styles.column}>
+          <div className={styles.columnHeader}>
+            <h3>Blog Queue</h3>
+            <div className={styles.toggleContainer}>
+              <span className={styles.toggleLabel}>AUTO-POST</span>
+              <button
+                onClick={toggleBlog}
+                className={`${styles.toggle} ${blogEnabled ? styles.toggleOn : ''}`}
+                aria-checked={blogEnabled}
+                role="switch"
+              >
+                <span className={styles.toggleThumb} />
+              </button>
             </div>
-          </>
-        )}
+          </div>
+          
+          <div 
+            className={`${styles.cardList} ${!blogEnabled ? styles.disabled : ''}`}
+            onDragOver={handleDragOver}
+          >
+            {blogQueue.map((item) => (
+              <div
+                key={item.id}
+                className={`${styles.cardWrapper} ${
+                  draggedItem === item.id ? styles.dragging : ''
+                } ${
+                  draggedOverItem === item.id ? styles.dragOver : ''
+                }`}
+                draggable
+                onDragStart={(e) => handleDragStart(e, item.id, 'blog')}
+                onDragEnter={(e) => handleDragEnter(e, item.id)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, item.id, 'blog')}
+                onDragEnd={handleDragEnd}
+              >
+                <ContentCard
+                  id={item.id}
+                  type="blog"
+                  title={item.title}
+                  content={item.content}
+                  status={item.status}
+                  queuePosition={item.queue_position}
+                  dayLabel={getQueueDayLabel(item.queue_position!, 'blog')}
+                  onDelete={handleDeleteFromQueue}
+                  onAction={(id: string, action: string) => {
+                    if (action === 'retry') handleRetryFailed(id);
+                  }}
+                  isDraggable={false}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

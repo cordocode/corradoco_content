@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+/* Font imports */
+@import url('https://api.fontshare.com/v2/css?f[]=khand@300,400&f[]=array@400&display=swap');
+
+:root {
+  /* Brand Colors - ONLY THESE */
+  --cream: #ffffe2;
+  --charcoal: #1a1a1a;
+  --grey: #8a8a8a;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  background: #ffffe2;
+}
+
+body {
+  background: #ffffe2;
+  color: #1a1a1a;
+  font-family: 'Array', sans-serif;
+  font-weight: 400;
+  line-height: 1.6;
+  font-size: 16px;
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Khand', sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  color: #1a1a1a;
+}
+
+h1 { font-size: 48px; }
+h2 { font-size: 36px; }
+h3 { font-size: 28px; }
+h4 { font-size: 24px; }
+
+/* Force all backgrounds to cream */
+div, main, header, section, article {
+  background-color: #ffffe2;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #ffffe2;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1a1a1a;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #8a8a8a;
+}

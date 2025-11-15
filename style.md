@@ -10,10 +10,6 @@ A clean, minimal design aesthetic focused on clarity and professionalism with su
 ### Primary Colors
 - **Cream Background**: `#ffffe2` - Main background color throughout site
 - **Charcoal Text**: `#1a1a1a` - Primary text and strong UI elements
-- **Medium Grey Text**: `#4a4a4a` - Secondary text and descriptions
-- **Light Grey Text**: `#6a6a6a` - Tertiary text and subtle elements
-- **Divider Grey**: `#8a8a8a` - Borders and inactive states
-- **Background Grey**: `#d4d4d4` - Very subtle backgrounds
 
 ### Interactive States
 - **Hover**: Elements typically transform with `translateY(-2px to -4px)` and add subtle shadows

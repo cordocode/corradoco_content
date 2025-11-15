@@ -9,6 +9,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Check if blog posting is enabled
+    const { data: settingData } = await supabaseAdmin
+      .from('settings')
+      .select('value')
+      .eq('key', 'blog_posting_enabled')
+      .single();
+
+    if (!settingData || settingData.value !== 'true') {
+      console.log('Blog posting is disabled - skipping');
+      return NextResponse.json({ 
+        message: 'Blog posting disabled', 
+        enabled: false 
+      });
+    }
+
     // Check for failed posts first
     const { data: failed } = await supabaseAdmin
       .from('content_pieces')
