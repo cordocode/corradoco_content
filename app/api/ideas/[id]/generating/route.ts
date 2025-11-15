@@ -11,8 +11,7 @@ export async function POST(
     const { error } = await supabaseAdmin
       .from('ideas')
       .update({ 
-        status: 'generating',
-        updated_at: new Date().toISOString()
+        status: 'generating'
       })
       .eq('id', id);
 

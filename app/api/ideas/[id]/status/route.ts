@@ -13,8 +13,7 @@ export async function PATCH(
     const { error } = await supabaseAdmin
       .from('ideas')
       .update({ 
-        status,
-        updated_at: new Date().toISOString()
+        status
       })
       .eq('id', id);
 

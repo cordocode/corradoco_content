@@ -6,7 +6,7 @@ export async function GET() {
     const { data, error } = await supabaseAdmin
       .from('ideas')
       .select('*')
-      .eq('status', 'new')
+      .in('status', ['new', 'generating', 'drafted'])
       .order('created_at', { ascending: false });
 
     if (error) throw error;

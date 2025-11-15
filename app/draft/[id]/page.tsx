@@ -1,17 +1,14 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import ContentCard from '../../components/ContentCard';
-import Button from '../../components/Button'; 
+import { useState, useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import Button from '../../components/Button';
 import styles from './draft.module.css';
 
 interface Idea {
   id: string;
   content: string;
-  source_email: string | null;
   status: string;
-  created_at: string;
 }
 
 interface ContentPiece {
@@ -21,278 +18,142 @@ interface ContentPiece {
   title: string | null;
   content: string;
   status: string;
-  queue_position: number | null;
-  created_at: string;
-  updated_at: string;
 }
 
-export default function DashboardPage() {
-  const [ideas, setIdeas] = useState<Idea[]>([]);
-  const [linkedinQueue, setLinkedinQueue] = useState<ContentPiece[]>([]);
-  const [blogQueue, setBlogQueue] = useState<ContentPiece[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [linkedinEnabled, setLinkedinEnabled] = useState(false);
-  const [blogEnabled, setBlogEnabled] = useState(false);
-  const [showNewIdea, setShowNewIdea] = useState(false);
-  const [newIdeaContent, setNewIdeaContent] = useState('');
-  const [draggedItem, setDraggedItem] = useState<string | null>(null);
-  const [draggedOverItem, setDraggedOverItem] = useState<string | null>(null);
-  const [draggedFromColumn, setDraggedFromColumn] = useState<string | null>(null);
-  const newIdeaRef = useRef<HTMLTextAreaElement>(null);
+export default function DraftPage() {
+  const params = useParams();
   const router = useRouter();
+  const ideaId = params.id as string;
+
+  const [idea, setIdea] = useState<Idea | null>(null);
+  const [pieces, setPieces] = useState<ContentPiece[]>([]);
+  const [linkedinCount, setLinkedinCount] = useState(1);
+  const [blogCount, setBlogCount] = useState(1);
+  const [generating, setGenerating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchData();
-    fetchSettings();
-    const interval = setInterval(fetchData, 30000);
+    loadData();
+    const interval = setInterval(loadData, 3000); // Check for new content every 3s
     return () => clearInterval(interval);
-  }, []);
+  }, [ideaId]);
 
-  useEffect(() => {
-    if (showNewIdea && newIdeaRef.current) {
-      newIdeaRef.current.focus();
-    }
-  }, [showNewIdea]);
-
-  const fetchData = async () => {
+  const loadData = async () => {
     try {
-      const [ideasRes, queueRes] = await Promise.all([
-        fetch('/api/ideas'),
-        fetch('/api/queue')
-      ]);
-
-      if (ideasRes.ok) {
-        const ideasData = await ideasRes.json();
-        setIdeas(ideasData);
+      // Load idea
+      const ideaRes = await fetch(`/api/ideas/${ideaId}`);
+      if (ideaRes.ok) {
+        const ideaData = await ideaRes.json();
+        setIdea(ideaData);
+        
+        // Stop polling if status is 'drafted'
+        if (ideaData.status === 'drafted') {
+          setGenerating(false);
+        }
       }
 
-      if (queueRes.ok) {
-        const queueData = await queueRes.json();
-        setLinkedinQueue(queueData.linkedin);
-        setBlogQueue(queueData.blog);
+      // Load existing content pieces
+      const piecesRes = await fetch(`/api/ideas/${ideaId}/content`);
+      if (piecesRes.ok) {
+        const piecesData = await piecesRes.json();
+        setPieces(piecesData || []);
       }
     } catch (error) {
-      console.error('Error fetching data:', error);
+      console.error('Error loading data:', error);
+    }
+  };
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    try {
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          ideaId, 
+          linkedinCount, 
+          blogCount 
+        }),
+      });
+
+      if (response.ok) {
+        await loadData();
+      }
+    } catch (error) {
+      console.error('Generation error:', error);
     } finally {
-      setLoading(false);
+      setGenerating(false);
     }
   };
 
-  const fetchSettings = async () => {
+  const handleEdit = async (id: string, content: string, title?: string) => {
     try {
-      const [linkedinRes, blogRes] = await Promise.all([
-        fetch('/api/settings/linkedin'),
-        fetch('/api/settings/blog')
-      ]);
-
-      if (linkedinRes.ok) {
-        const data = await linkedinRes.json();
-        setLinkedinEnabled(data.enabled);
-      }
-
-      if (blogRes.ok) {
-        const data = await blogRes.json();
-        setBlogEnabled(data.enabled);
-      }
-    } catch (error) {
-      console.error('Error fetching settings:', error);
-    }
-  };
-
-  const toggleLinkedIn = async () => {
-    const newState = !linkedinEnabled;
-    try {
-      const response = await fetch('/api/settings/linkedin', {
-        method: 'POST',
+      await fetch(`/api/content/${id}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: newState }),
+        body: JSON.stringify({ content, title }),
       });
-
-      if (response.ok) {
-        setLinkedinEnabled(newState);
-      }
+      loadData();
     } catch (error) {
-      console.error('Error toggling LinkedIn:', error);
+      console.error('Edit error:', error);
     }
   };
 
-  const toggleBlog = async () => {
-    const newState = !blogEnabled;
+  const handleRegenerate = async (id: string) => {
     try {
-      const response = await fetch('/api/settings/blog', {
+      const response = await fetch(`/api/content/${id}/regenerate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: newState }),
       });
-
       if (response.ok) {
-        setBlogEnabled(newState);
+        loadData();
       }
     } catch (error) {
-      console.error('Error toggling Blog:', error);
+      console.error('Regenerate error:', error);
     }
   };
 
-  const handleDraft = async (ideaId: string) => {
-    await fetch(`/api/ideas/${ideaId}/generating`, { method: 'POST' });
-    router.push(`/draft/${ideaId}`);
-  };
-
-  const handleAddIdea = async () => {
-    if (!newIdeaContent.trim()) return;
-
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this piece?')) return;
     try {
-      const response = await fetch('/api/ideas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: newIdeaContent }),
-      });
-
-      if (response.ok) {
-        setNewIdeaContent('');
-        setShowNewIdea(false);
-        fetchData();
-      }
-    } catch (error) {
-      console.error('Error adding idea:', error);
-    }
-  };
-
-  const handleDeleteFromQueue = async (id: string) => {
-    if (!confirm('Remove this item from the queue?')) return;
-
-    try {
-      const response = await fetch(`/api/queue/${id}`, {
+      await fetch(`/api/ideas/${ideaId}/content`, {
         method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
       });
-
-      if (response.ok) {
-        fetchData();
-      }
+      loadData();
     } catch (error) {
-      console.error('Error deleting from queue:', error);
+      console.error('Delete error:', error);
     }
   };
 
-  const handleRetryFailed = async (id: string) => {
+  const handleAddToQueue = async (contentId: string) => {
     try {
-      const response = await fetch(`/api/content/${id}/retry`, {
+      await fetch('/api/queue/add-single', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contentId }),
       });
-
-      if (response.ok) {
-        fetchData();
-      }
+      router.push('/dashboard');
     } catch (error) {
-      console.error('Error retrying:', error);
+      console.error('Queue error:', error);
     }
   };
 
-  const getQueueDayLabel = (position: number, type: 'blog' | 'linkedin') => {
-    if (type === 'blog') {
-      const weeks = Math.floor((position - 1) / 1);
-      return weeks === 0 ? 'Monday' : `Monday (in ${weeks + 1} weeks)`;
-    } else {
-      const days = ['Tuesday', 'Thursday', 'Saturday'];
-      const weekNum = Math.floor((position - 1) / 3);
-      const dayIndex = (position - 1) % 3;
-      return weekNum === 0 ? days[dayIndex] : `${days[dayIndex]} (week ${weekNum + 1})`;
-    }
-  };
-
-  const handleDragStart = (e: React.DragEvent, itemId: string, column: string) => {
-    setDraggedItem(itemId);
-    setDraggedFromColumn(column);
-    e.dataTransfer.effectAllowed = 'move';
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleDragEnter = (e: React.DragEvent, itemId: string) => {
-    e.preventDefault();
-    if (draggedItem && draggedItem !== itemId) {
-      setDraggedOverItem(itemId);
-    }
-  };
-
-  const handleDragLeave = () => {
-    setDraggedOverItem(null);
-  };
-
-  const handleDrop = async (e: React.DragEvent, targetId: string, column: string) => {
-    e.preventDefault();
-    
-    if (!draggedItem || draggedItem === targetId || draggedFromColumn !== column) {
-      setDraggedItem(null);
-      setDraggedOverItem(null);
-      setDraggedFromColumn(null);
-      return;
-    }
-
-    // Optimistically update UI
-    const items = column === 'linkedin' ? linkedinQueue : 
-                 column === 'blog' ? blogQueue : ideas;
-    
-    const draggedIndex = items.findIndex(item => item.id === draggedItem);
-    const targetIndex = items.findIndex(item => item.id === targetId);
-    
-    if (draggedIndex !== -1 && targetIndex !== -1) {
-      const newItems = [...items];
-      const [removed] = newItems.splice(draggedIndex, 1);
-      newItems.splice(targetIndex, 0, removed);
-      
-      // Update positions
-      newItems.forEach((item, index) => {
-        if ('queue_position' in item) {
-          item.queue_position = index + 1;
-        }
+  const handleAddAllToQueue = async () => {
+    try {
+      const contentIds = pieces.map(p => p.id);
+      await fetch('/api/queue/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contentIds }),
       });
-      
-      if (column === 'linkedin') {
-        setLinkedinQueue(newItems as ContentPiece[]);
-      } else if (column === 'blog') {
-        setBlogQueue(newItems as ContentPiece[]);
-      } else {
-        setIdeas(newItems as Idea[]);
-      }
-
-      // Call API to persist
-      if (column === 'linkedin' || column === 'blog') {
-        try {
-          const targetItem = items.find(item => item.id === targetId);
-          if (targetItem && 'queue_position' in targetItem && targetItem.queue_position) {
-            await fetch('/api/queue/reorder', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                itemId: draggedItem,
-                newPosition: targetItem.queue_position,
-                type: column
-              }),
-            });
-          }
-        } catch (error) {
-          console.error('Error reordering:', error);
-          fetchData(); // Revert on error
-        }
-      }
+      router.push('/dashboard');
+    } catch (error) {
+      console.error('Queue error:', error);
     }
-    
-    setDraggedItem(null);
-    setDraggedOverItem(null);
-    setDraggedFromColumn(null);
   };
 
-  const handleDragEnd = () => {
-    setDraggedItem(null);
-    setDraggedOverItem(null);
-    setDraggedFromColumn(null);
-  };
-
-  if (loading) {
+  if (!idea) {
     return (
       <div className={styles.loading}>
         <h2>Loading...</h2>
@@ -303,201 +164,117 @@ export default function DashboardPage() {
   return (
     <div className={styles.container}>
       <header className={styles.header}>
-        <h1>Content Dashboard</h1>
+        <h1>Draft Content</h1>
+        <Button variant="secondary" onClick={() => router.push('/dashboard')}>
+          Back to Dashboard
+        </Button>
       </header>
 
-      <div className={styles.columns}>
-        {/* Ideas Column */}
-        <div className={styles.column}>
-          <div className={styles.columnHeader}>
-            <h3>Ideas</h3>
-            <Button
-              size="small"
-              onClick={() => setShowNewIdea(true)}
-            >
-              Add Idea
-            </Button>
+      {/* Original Idea */}
+      <div className={styles.ideaSection}>
+        <h3>Original Idea</h3>
+        <p>{idea.content}</p>
+      </div>
+
+      {/* Generation Controls */}
+      {pieces.length === 0 && (
+        <div className={styles.controls}>
+          <div className={styles.sliders}>
+            <div className={styles.slider}>
+              <label>LinkedIn Posts: {linkedinCount}</label>
+              <input
+                type="range"
+                min="0"
+                max="3"
+                value={linkedinCount}
+                onChange={(e) => setLinkedinCount(Number(e.target.value))}
+                disabled={generating}
+              />
+            </div>
+            <div className={styles.slider}>
+              <label>Blog Posts: {blogCount}</label>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                value={blogCount}
+                onChange={(e) => setBlogCount(Number(e.target.value))}
+                disabled={generating}
+              />
+            </div>
           </div>
-          
-          <div 
-            className={styles.cardList}
-            onDragOver={handleDragOver}
+          <Button 
+            onClick={handleGenerate}
+            disabled={generating || (linkedinCount + blogCount === 0)}
           >
-            {showNewIdea && (
-              <div className={styles.newIdeaCard}>
-                <textarea
-                  ref={newIdeaRef}
-                  value={newIdeaContent}
-                  onChange={(e) => setNewIdeaContent(e.target.value)}
-                  placeholder="Enter your idea..."
-                  className={styles.ideaInput}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && e.metaKey) {
-                      handleAddIdea();
-                    }
-                    if (e.key === 'Escape') {
-                      setShowNewIdea(false);
-                      setNewIdeaContent('');
-                    }
-                  }}
-                />
-                <div className={styles.ideaActions}>
-                  <Button size="small" onClick={handleAddIdea}>
-                    Save
+            {generating ? 'Generating...' : 'Generate Content'}
+          </Button>
+        </div>
+      )}
+
+      {/* Generated Content */}
+      {pieces.length > 0 && (
+        <>
+          <div className={styles.piecesGrid}>
+            {pieces.map((piece) => (
+              <div key={piece.id} className={styles.pieceCard}>
+                <div className={styles.pieceHeader}>
+                  <span className={styles.badge}>{piece.type}</span>
+                  <Button 
+                    size="small" 
+                    variant="danger"
+                    onClick={() => handleDelete(piece.id)}
+                  >
+                    Delete
                   </Button>
-                  <Button
+                </div>
+
+                {piece.type === 'blog' && (
+                  <input
+                    type="text"
+                    value={piece.title || ''}
+                    onChange={(e) => handleEdit(piece.id, piece.content, e.target.value)}
+                    className={styles.titleInput}
+                    placeholder="Blog Title"
+                  />
+                )}
+
+                <textarea
+                  value={piece.content}
+                  onChange={(e) => handleEdit(piece.id, e.target.value, piece.title || undefined)}
+                  className={styles.contentInput}
+                  rows={10}
+                />
+
+                <div className={styles.pieceActions}>
+                  <Button 
+                    size="small"
+                    onClick={() => handleRegenerate(piece.id)}
+                  >
+                    Regenerate
+                  </Button>
+                  <Button 
                     size="small"
                     variant="secondary"
-                    onClick={() => {
-                      setShowNewIdea(false);
-                      setNewIdeaContent('');
-                    }}
+                    onClick={() => handleAddToQueue(piece.id)}
                   >
-                    Cancel
+                    Add to Queue
                   </Button>
                 </div>
               </div>
-            )}
-            
-            {ideas.map((idea) => (
-              <div
-                key={idea.id}
-                className={`${styles.cardWrapper} ${
-                  draggedItem === idea.id ? styles.dragging : ''
-                } ${
-                  draggedOverItem === idea.id ? styles.dragOver : ''
-                }`}
-                draggable
-                onDragStart={(e) => handleDragStart(e, idea.id, 'ideas')}
-                onDragEnter={(e) => handleDragEnter(e, idea.id)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, idea.id, 'ideas')}
-                onDragEnd={handleDragEnd}
-              >
-                <ContentCard
-                  id={idea.id}
-                  type="idea"
-                  content={idea.content}
-                  onAction={(id: string, action: string) => {
-                    if (action === 'draft') handleDraft(id);
-                  }}
-                  isGenerating={idea.status === 'generating'}
-                  isDraggable={false}
-                />
-              </div>
             ))}
           </div>
-        </div>
 
-        {/* LinkedIn Queue */}
-        <div className={styles.column}>
-          <div className={styles.columnHeader}>
-            <h3>LinkedIn Queue</h3>
-            <div className={styles.toggleContainer}>
-              <span className={styles.toggleLabel}>AUTO-POST</span>
-              <button
-                onClick={toggleLinkedIn}
-                className={`${styles.toggle} ${linkedinEnabled ? styles.toggleOn : ''}`}
-                aria-checked={linkedinEnabled}
-                role="switch"
-              >
-                <span className={styles.toggleThumb} />
-              </button>
-            </div>
+          <div className={styles.bottomActions}>
+            <Button onClick={handleAddAllToQueue}>
+              Add All to Queue
+            </Button>
+            <Button variant="secondary" onClick={() => router.push('/dashboard')}>
+              Back to Dashboard
+            </Button>
           </div>
-          
-          <div 
-            className={`${styles.cardList} ${!linkedinEnabled ? styles.disabled : ''}`}
-            onDragOver={handleDragOver}
-          >
-            {linkedinQueue.map((item) => (
-              <div
-                key={item.id}
-                className={`${styles.cardWrapper} ${
-                  draggedItem === item.id ? styles.dragging : ''
-                } ${
-                  draggedOverItem === item.id ? styles.dragOver : ''
-                }`}
-                draggable
-                onDragStart={(e) => handleDragStart(e, item.id, 'linkedin')}
-                onDragEnter={(e) => handleDragEnter(e, item.id)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, item.id, 'linkedin')}
-                onDragEnd={handleDragEnd}
-              >
-                <ContentCard
-                  id={item.id}
-                  type="linkedin"
-                  content={item.content}
-                  status={item.status}
-                  queuePosition={item.queue_position}
-                  dayLabel={getQueueDayLabel(item.queue_position!, 'linkedin')}
-                  onDelete={handleDeleteFromQueue}
-                  onAction={(id: string, action: string) => {
-                    if (action === 'retry') handleRetryFailed(id);
-                  }}
-                  isDraggable={false}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Blog Queue */}
-        <div className={styles.column}>
-          <div className={styles.columnHeader}>
-            <h3>Blog Queue</h3>
-            <div className={styles.toggleContainer}>
-              <span className={styles.toggleLabel}>AUTO-POST</span>
-              <button
-                onClick={toggleBlog}
-                className={`${styles.toggle} ${blogEnabled ? styles.toggleOn : ''}`}
-                aria-checked={blogEnabled}
-                role="switch"
-              >
-                <span className={styles.toggleThumb} />
-              </button>
-            </div>
-          </div>
-          
-          <div 
-            className={`${styles.cardList} ${!blogEnabled ? styles.disabled : ''}`}
-            onDragOver={handleDragOver}
-          >
-            {blogQueue.map((item) => (
-              <div
-                key={item.id}
-                className={`${styles.cardWrapper} ${
-                  draggedItem === item.id ? styles.dragging : ''
-                } ${
-                  draggedOverItem === item.id ? styles.dragOver : ''
-                }`}
-                draggable
-                onDragStart={(e) => handleDragStart(e, item.id, 'blog')}
-                onDragEnter={(e) => handleDragEnter(e, item.id)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, item.id, 'blog')}
-                onDragEnd={handleDragEnd}
-              >
-                <ContentCard
-                  id={item.id}
-                  type="blog"
-                  title={item.title}
-                  content={item.content}
-                  status={item.status}
-                  queuePosition={item.queue_position}
-                  dayLabel={getQueueDayLabel(item.queue_position!, 'blog')}
-                  onDelete={handleDeleteFromQueue}
-                  onAction={(id: string, action: string) => {
-                    if (action === 'retry') handleRetryFailed(id);
-                  }}
-                  isDraggable={false}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }
