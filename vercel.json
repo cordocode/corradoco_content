@@ -1,0 +1,17 @@
+{
+  "functions": {
+    "app/api/generate/route.ts": {
+      "maxDuration": 59
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/email-ingest",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/publish-blog",
+      "schedule": "0 15 * * 1"
+    }
+  ]
+}

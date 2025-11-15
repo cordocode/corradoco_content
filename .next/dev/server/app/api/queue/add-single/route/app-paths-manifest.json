@@ -1,0 +1,3 @@
+{
+  "/api/queue/add-single/route": "app/api/queue/add-single/route.js"
+}
