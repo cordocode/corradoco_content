@@ -1,3 +1,5 @@
+### Create `.gitignore`:
+
 node_modules/
 .env
 .env.local
@@ -5,3 +7,4 @@ dist/
 .vercel
 .DS_Store
 private/
+.next/
